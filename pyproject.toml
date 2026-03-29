@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "poster-sentry"
+version = "0.1.0"
+description = "Lightweight multimodal scientific poster classifier — text + visual + structural features"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "James O'Neill", email = "joneill@calmi2.org"},
+    {name = "Sanjay Soundarajan"},
+    {name = "Dorian Portillo"},
+    {name = "Bhavesh Patel", email = "bpatel@calmi2.org"},
+]
+maintainers = [
+    {name = "FAIR Data Innovations Hub", email = "info@fairdataihub.org"},
+]
+keywords = [
+    "scientific-posters",
+    "classification",
+    "multimodal",
+    "document-classification",
+    "quality-control",
+    "FAIR-data",
+    "posters-science",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Text Processing :: General",
+]
+
+dependencies = [
+    "numpy>=1.24",
+    "model2vec>=0.3.0",
+    "scikit-learn>=1.3",
+    "PyMuPDF>=1.23.0",
+    "Pillow>=10.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "tqdm>=4.65",
+]
+
+[project.scripts]
+poster-sentry = "poster_sentry.cli:main"
+
+[project.urls]
+Homepage = "https://posters.science"
+Repository = "https://github.com/fairdataihub/poster-sentry"
+"HuggingFace Model" = "https://huggingface.co/fairdataihub/poster-sentry"
+"Training Data" = "https://huggingface.co/datasets/fairdataihub/poster-sentry-training-data"
+"Bug Tracker" = "https://github.com/fairdataihub/poster-sentry/issues"
+
+[tool.setuptools.packages.find]
+include = ["poster_sentry*"]
+
+[tool.setuptools.package-data]
+poster_sentry = ["../models/*.npz"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
