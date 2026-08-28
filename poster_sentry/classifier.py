@@ -133,13 +133,11 @@ class PosterSentry:
     def extract_text(self, pdf_path: str, max_chars: int = 4000) -> str:
         """Extract and clean text from first page of PDF."""
         try:
-            import fitz
-            doc = fitz.open(pdf_path)
-            if len(doc) == 0:
-                doc.close()
-                return ""
-            text = doc[0].get_text()
-            doc.close()
+            import pdfplumber
+            with pdfplumber.open(pdf_path) as doc:
+                if len(doc.pages) == 0:
+                    return ""
+                text = doc.pages[0].extract_text() or ""
             # Basic cleanup
             import re
             text = re.sub(r"\s+", " ", text).strip()
