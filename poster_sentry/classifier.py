@@ -55,10 +55,16 @@ class PosterSentry:
         self,
         model_name: str = "minishlab/potion-base-32M",
         models_dir: Optional[Path] = None,
+        backend: str = None,
     ):
         self.model_name = model_name
         self.models_dir = models_dir or self._default_models_dir()
         self.models_dir = Path(self.models_dir)
+
+        # PDF backend: "pdfplumber" (default, matches the released model) or
+        # "pymupdf" (faster, AGPL, optional dependency). See features.py.
+        from .features import DEFAULT_BACKEND
+        self.backend = backend or DEFAULT_BACKEND
 
         self.text_model = None
         self.W: Optional[np.ndarray] = None
@@ -67,8 +73,8 @@ class PosterSentry:
         self.scaler_scale: Optional[np.ndarray] = None
         self.labels = ["non_poster", "poster"]
 
-        self.visual_extractor = VisualFeatureExtractor()
-        self.structural_extractor = PDFStructuralExtractor()
+        self.visual_extractor = VisualFeatureExtractor(backend=self.backend)
+        self.structural_extractor = PDFStructuralExtractor(backend=self.backend)
         self._initialized = False
 
     @staticmethod
@@ -131,19 +137,9 @@ class PosterSentry:
     # ── Feature extraction ──────────────────────────────────────
 
     def extract_text(self, pdf_path: str, max_chars: int = 4000) -> str:
-        """Extract and clean text from first page of PDF."""
-        try:
-            import pdfplumber
-            with pdfplumber.open(pdf_path) as doc:
-                if len(doc.pages) == 0:
-                    return ""
-                text = doc.pages[0].extract_text() or ""
-            # Basic cleanup
-            import re
-            text = re.sub(r"\s+", " ", text).strip()
-            return text[:max_chars]
-        except Exception:
-            return ""
+        """Extract and clean first-page text with the selected backend."""
+        from .features import extract_first_page_text
+        return extract_first_page_text(pdf_path, backend=self.backend, max_chars=max_chars)
 
     def embed_texts(self, texts: List[str]) -> np.ndarray:
         """Encode texts with model2vec, L2-normalize."""

@@ -53,6 +53,11 @@ dev = [
     "pytest>=7.0",
     "tqdm>=4.65",
 ]
+# Optional faster PDF backend. PyMuPDF is AGPL-licensed, so it is not a default
+# dependency; the released model is trained on the default pdfplumber backend.
+pymupdf = [
+    "PyMuPDF>=1.23.0",
+]
 
 [project.scripts]
 poster-sentry = "poster_sentry.cli:main"

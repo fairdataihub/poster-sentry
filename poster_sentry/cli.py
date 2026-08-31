@@ -22,6 +22,7 @@ def classify_cmd(args):
 
     sentry = PosterSentry(
         models_dir=Path(args.models_dir) if args.models_dir else None,
+        backend=args.backend,
     )
     sentry.initialize()
 
@@ -65,6 +66,8 @@ def info_cmd(args):
     print(f"  Total features: 542")
     print(f"  Classifier:    LogisticRegression + StandardScaler")
     print(f"  Embedding:     minishlab/potion-base-32M")
+    from .features import DEFAULT_BACKEND
+    print(f"  PDF backend:   {DEFAULT_BACKEND} (default); pymupdf available with [pymupdf] extra")
     print(f"  License:       MIT")
     print(f"  HuggingFace:   huggingface.co/fairdataihub/poster-sentry")
 
@@ -82,6 +85,11 @@ def main():
     p_cls.add_argument("--output", "-o", help="Write TSV results to file")
     p_cls.add_argument("--json", action="store_true", help="Print JSON output")
     p_cls.add_argument("--models-dir", default=None, help="Path to models directory")
+    p_cls.add_argument(
+        "--backend", default=None, choices=["pdfplumber", "pymupdf"],
+        help="PDF backend: pdfplumber (default, matches the released model) or "
+             "pymupdf (faster, AGPL, needs 'pip install poster-sentry[pymupdf]')",
+    )
     p_cls.set_defaults(func=classify_cmd)
 
     # info
