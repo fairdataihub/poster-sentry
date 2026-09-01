@@ -20,5 +20,5 @@ Usage:
 from .classifier import PosterSentry
 from .features import VisualFeatureExtractor, PDFStructuralExtractor
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = ["PosterSentry", "VisualFeatureExtractor", "PDFStructuralExtractor"]

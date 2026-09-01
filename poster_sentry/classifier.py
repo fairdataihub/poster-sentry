@@ -73,6 +73,17 @@ class PosterSentry:
         self.scaler_scale: Optional[np.ndarray] = None
         self.labels = ["non_poster", "poster"]
 
+        # Head architecture. "stacked" heads score the text embedding with a
+        # stage-one logistic regression whose poster probability becomes a
+        # single text-score feature for the final classifier over
+        # [text_score + 15 visual + 15 structural]; "flat" heads classify the
+        # raw 542-dimensional concatenation and remain loadable.
+        self.arch = "flat"
+        self.s1_W: Optional[np.ndarray] = None
+        self.s1_b: Optional[np.ndarray] = None
+        self.s1_scaler_mean: Optional[np.ndarray] = None
+        self.s1_scaler_scale: Optional[np.ndarray] = None
+
         self.visual_extractor = VisualFeatureExtractor(backend=self.backend)
         self.structural_extractor = PDFStructuralExtractor(backend=self.backend)
         self._initialized = False
@@ -118,6 +129,7 @@ class PosterSentry:
         path = self.models_dir / "poster_sentry_head.npz"
         if path.exists():
             data = np.load(path, allow_pickle=True)
+            self.arch = str(data["arch"]) if "arch" in data.files else "flat"
             self.W = data["W"]
             self.b = data["b"]
             if "labels" in data:
@@ -125,14 +137,27 @@ class PosterSentry:
             if "scaler_mean" in data and "scaler_scale" in data:
                 self.scaler_mean = data["scaler_mean"]
                 self.scaler_scale = data["scaler_scale"]
-            logger.info(f"  Loaded classifier head: {path}")
+            if self.arch == "stacked":
+                self.s1_W = data["s1_W"]
+                self.s1_b = data["s1_b"]
+                self.s1_scaler_mean = data["s1_scaler_mean"]
+                self.s1_scaler_scale = data["s1_scaler_scale"]
+            logger.info(f"  Loaded classifier head ({self.arch}): {path}")
         else:
             logger.warning(f"  Head not found: {path} — run training first")
 
     def save_head(self, path: Optional[Path] = None):
         path = path or (self.models_dir / "poster_sentry_head.npz")
         path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez(path, W=self.W, b=self.b, labels=np.array(self.labels))
+        payload = dict(W=self.W, b=self.b, labels=np.array(self.labels),
+                       arch=np.array(self.arch))
+        if self.scaler_mean is not None:
+            payload.update(scaler_mean=self.scaler_mean, scaler_scale=self.scaler_scale)
+        if self.arch == "stacked":
+            payload.update(s1_W=self.s1_W, s1_b=self.s1_b,
+                           s1_scaler_mean=self.s1_scaler_mean,
+                           s1_scaler_scale=self.s1_scaler_scale)
+        np.savez(path, **payload)
 
     # ── Feature extraction ──────────────────────────────────────
 
@@ -158,6 +183,34 @@ class PosterSentry:
         return np.concatenate([text_emb, visual_feats, structural_feats])
 
     # ── Inference ───────────────────────────────────────────────
+
+    @staticmethod
+    def _softmax(logits: np.ndarray) -> np.ndarray:
+        e = np.exp(logits - logits.max(axis=-1, keepdims=True))
+        return e / e.sum(axis=-1, keepdims=True)
+
+    def _poster_col(self) -> int:
+        try:
+            return self.labels.index("poster")
+        except ValueError:
+            return 1
+
+    def _score_features(self, text_embs, visual_arr, struct_arr):
+        """Class probabilities (n, 2) and, for stacked heads, the text score."""
+        ip = self._poster_col()
+        text_scores = None
+        if self.arch == "stacked":
+            T = (text_embs - self.s1_scaler_mean) / np.where(
+                self.s1_scaler_scale == 0, 1, self.s1_scaler_scale)
+            text_scores = self._softmax(T @ self.s1_W + self.s1_b)[:, ip]
+            X = np.concatenate(
+                [text_scores[:, None].astype("float32"), visual_arr, struct_arr], axis=1)
+        else:
+            X = np.concatenate([text_embs, visual_arr, struct_arr], axis=1)
+        if self.scaler_mean is not None and self.scaler_scale is not None:
+            X = (X - self.scaler_mean) / np.where(self.scaler_scale == 0, 1, self.scaler_scale)
+        probs = self._softmax(X @ self.W + self.b)
+        return probs, text_scores
 
     def classify(self, pdf_path: str) -> Dict[str, Any]:
         """Classify a single PDF as poster or non-poster."""
@@ -192,30 +245,22 @@ class PosterSentry:
         visual_arr = np.array(visual_vecs, dtype="float32")
         struct_arr = np.array(structural_vecs, dtype="float32")
 
-        # Concatenate
-        X = np.concatenate([text_embs, visual_arr, struct_arr], axis=1)
-
-        # Scale features (critical for balanced text vs structural signal)
-        if self.scaler_mean is not None and self.scaler_scale is not None:
-            X = (X - self.scaler_mean) / np.where(self.scaler_scale == 0, 1, self.scaler_scale)
-
-        # Predict
         if self.W is None:
             return [{"path": p, "is_poster": False, "confidence": 0.0,
                      "error": "Model not trained"} for p in pdf_paths]
 
-        logits = X @ self.W + self.b
-        e = np.exp(logits - logits.max(axis=-1, keepdims=True))
-        probs = e / e.sum(axis=-1, keepdims=True)
+        probs, text_scores = self._score_features(text_embs, visual_arr, struct_arr)
+        ip = self._poster_col()
 
         results = []
         for i, p in enumerate(pdf_paths):
-            poster_prob = float(probs[i, 1])
+            poster_prob = float(probs[i, ip])
             results.append({
                 "path": str(p),
                 "is_poster": poster_prob > 0.5,
                 "confidence": round(poster_prob, 4),
-                "text_score": round(float(probs[i, 1]), 4),
+                "text_score": round(float(text_scores[i]) if text_scores is not None
+                                    else poster_prob, 4),
             })
         return results
 
@@ -236,16 +281,9 @@ class PosterSentry:
         # Zero-fill visual and structural features
         zeros_visual = np.zeros((len(texts), N_VISUAL_FEATURES), dtype="float32")
         zeros_struct = np.zeros((len(texts), N_STRUCTURAL_FEATURES), dtype="float32")
-        X = np.concatenate([text_embs, zeros_visual, zeros_struct], axis=1)
+        probs, _ = self._score_features(text_embs, zeros_visual, zeros_struct)
+        ip = self._poster_col()
 
-        # Scale
-        if self.scaler_mean is not None and self.scaler_scale is not None:
-            X = (X - self.scaler_mean) / np.where(self.scaler_scale == 0, 1, self.scaler_scale)
-
-        logits = X @ self.W + self.b
-        e = np.exp(logits - logits.max(axis=-1, keepdims=True))
-        probs = e / e.sum(axis=-1, keepdims=True)
-
-        return [{"is_poster": float(probs[i, 1]) > 0.5,
-                 "confidence": round(float(probs[i, 1]), 4)}
+        return [{"is_poster": float(probs[i, ip]) > 0.5,
+                 "confidence": round(float(probs[i, ip]), 4)}
                 for i in range(len(texts))]
