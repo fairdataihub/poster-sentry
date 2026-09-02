@@ -79,9 +79,19 @@ class VisualFeatureExtractor:
 
     FEATURE_NAMES = VISUAL_FEATURE_NAMES
 
+    # Cap on first-page rasterization, in pixels. Pages whose render at the
+    # requested dpi would exceed this budget are rasterized at a reduced
+    # scale, while the reported image dimensions (the img_width and
+    # img_height features) keep their nominal values, so feature semantics
+    # are unchanged for every document. This bounds render memory on very
+    # large pages; it does not bound render time on content-pathological
+    # PDFs, which only process isolation can.
+    MAX_RENDER_PIXELS = 32_000_000
+
     def __init__(self, target_size: Tuple[int, int] = (256, 256), backend: str = None):
         self.target_size = target_size
         self.backend = backend or DEFAULT_BACKEND
+        self._nominal_size: Optional[Tuple[int, int]] = None
 
     def pdf_to_image(self, pdf_path: str, dpi: int = 72) -> Optional[np.ndarray]:
         """Render first page of PDF to RGB numpy array with the selected backend."""
@@ -90,31 +100,42 @@ class VisualFeatureExtractor:
                 return self._render_pymupdf(pdf_path, dpi)
             return self._render_pypdfium2(pdf_path, dpi)
         except Exception as e:
+            self._nominal_size = None
             logger.debug(f"PDF to image failed ({self.backend}): {e}")
             return None
 
-    @staticmethod
-    def _render_pypdfium2(pdf_path: str, dpi: int) -> Optional[np.ndarray]:
+    def _render_pypdfium2(self, pdf_path: str, dpi: int) -> Optional[np.ndarray]:
         import pypdfium2 as pdfium
         pdf = pdfium.PdfDocument(pdf_path)
         if len(pdf) == 0:
             pdf.close()
             return None
         page = pdf[0]
-        img = np.array(page.render(scale=dpi / 72.0).to_pil().convert("RGB"))
+        w_pt, h_pt = page.get_size()
+        scale = dpi / 72.0
+        nominal_px = (w_pt * scale) * (h_pt * scale)
+        if nominal_px > self.MAX_RENDER_PIXELS:
+            self._nominal_size = (int(round(w_pt * scale)), int(round(h_pt * scale)))
+            scale *= (self.MAX_RENDER_PIXELS / nominal_px) ** 0.5
+        img = np.array(page.render(scale=scale).to_pil().convert("RGB"))
         page.close()
         pdf.close()
         return img
 
-    @staticmethod
-    def _render_pymupdf(pdf_path: str, dpi: int) -> Optional[np.ndarray]:
+    def _render_pymupdf(self, pdf_path: str, dpi: int) -> Optional[np.ndarray]:
         import fitz
         doc = fitz.open(pdf_path)
         if len(doc) == 0:
             doc.close()
             return None
         page = doc[0]
-        pix = page.get_pixmap(matrix=fitz.Matrix(dpi / 72, dpi / 72))
+        zoom = dpi / 72.0
+        rect = page.rect
+        nominal_px = (rect.width * zoom) * (rect.height * zoom)
+        if nominal_px > self.MAX_RENDER_PIXELS:
+            self._nominal_size = (int(round(rect.width * zoom)), int(round(rect.height * zoom)))
+            zoom *= (self.MAX_RENDER_PIXELS / nominal_px) ** 0.5
+        pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
         img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
         if pix.n == 4:
             img = img[:, :, :3]
@@ -130,6 +151,9 @@ class VisualFeatureExtractor:
             from PIL import Image as PILImage
 
             h, w = image.shape[:2]
+            if self._nominal_size is not None:
+                w, h = self._nominal_size
+                self._nominal_size = None
             feats["img_width"] = float(w)
             feats["img_height"] = float(h)
             feats["img_aspect_ratio"] = w / h if h > 0 else 0.0
