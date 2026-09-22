@@ -20,7 +20,7 @@ Open repositories like Zenodo and Figshare host tens of thousands of records lab
 
 ## Architecture
 
-PosterSentry classifies PDFs using three complementary feature channels concatenated into a **542-dimensional** vector:
+PosterSentry classifies PDFs using three complementary feature channels summarized into a compact **31-feature** vector (a stage-one text score plus 15 visual and 15 structural features):
 
 | Channel | Features | Dimensions | Signal |
 |---------|----------|------------|--------|
@@ -28,35 +28,35 @@ PosterSentry classifies PDFs using three complementary feature channels concaten
 | **Visual** | Color stats, edge density, FFT spatial complexity, whitespace | 15 | Visual layout |
 | **Structural** | Page count, area, font diversity, text blocks, density | 15 | PDF geometry |
 
-A StandardScaler normalizes all features (preventing the 512-d text embedding from drowning out structural/visual signal), then a LogisticRegression classifier produces the final prediction.
+PosterSentry uses a two-stage (stacked) design: stage one scores the 512-dimensional text embedding alone, and its poster probability becomes a single `text_score` feature for a stage-two logistic regression over 31 features (text score plus the 15 visual and 15 structural features). Each stage has its own StandardScaler fit on the training split only, and stage two is trained on inner five-fold out-of-fold text scores so it never sees an in-sample-optimistic text score.
 
-The classifier head is a single linear layer stored as a numpy `.npz` file (**10 KB**). Inference is pure numpy — no GPU or deep learning framework required.
+Both stages live in one numpy `.npz` head (**20 KB**). Inference is pure numpy — no GPU or deep learning framework required.
 
 ## Performance
 
-Validated on 3,606 real scientific documents (zero synthetic data):
+Validated on the human-validated, license-cleared corpus (3,298 documents, zero synthetic data):
 
 | Metric | Value |
 |--------|-------|
-| **Accuracy** | **87.3%** |
-| F1 (poster) | 87.1% |
-| F1 (non-poster) | 87.4% |
-| Precision (poster) | 88.2% |
-| Recall (poster) | 85.9% |
+| **Held-out accuracy** | **93.1%** (95% CI 90.6 to 95.0) |
+| Nested out-of-fold accuracy | 93.9% |
+| F1 (poster) | 93.3% |
+| F1 (non-poster) | 93.0% |
+| Precision / Recall (poster) | 91.8% / 94.8% |
 | Inference speed | < 1 sec/PDF (CPU) |
 
-Applied to 30,205 PDFs from Zenodo and Figshare, PosterSentry classified **80.2% as true posters** and 19.8% as non-posters, with mean confidence of 0.799.
+Applied to 30,139 readable PDFs from Zenodo and Figshare, PosterSentry classified **80.5% as posters** and 19.5% as non-posters: roughly one in five records labeled as posters is something else.
 
 ### Top Discriminative Features
 
 | Feature | Coefficient | Signal |
 |---------|-------------|--------|
-| `size_per_page_kb` | +7.65 | Posters are dense, high-res single pages |
-| `page_count` | -5.49 | More pages = not a poster |
-| `file_size_kb` | -5.44 | Multi-page docs are bigger overall |
-| `is_landscape` | +0.98 | Some posters are landscape |
-| `color_diversity` | +0.95 | Posters are visually rich |
-| `edge_density` | +0.79 | More visual edges in posters |
+| `page_count` | -3.26 | More pages pushes away from poster |
+| `size_per_page_kb` | +2.42 | Dense, high-resolution single pages |
+| `line_count` | +1.94 | Posters pack many short text lines |
+| `file_size_kb` | -1.70 | Multi-page documents are bigger overall |
+| `mean_g` | +1.10 | Colorful, non-white pages |
+| `is_landscape` | +1.00 | Many posters are landscape |
 
 ## Quick Start
 
@@ -117,14 +117,14 @@ PosterSentry          -->  poster2json                     -->  FAIR output
 | CPU | Any modern CPU (no GPU needed) |
 | RAM | 4 GB+ |
 | Python | 3.10+ |
-| Model size | 10 KB head + ~60 MB embeddings (downloaded once) |
+| Model size | 20 KB head + ~60 MB embeddings (downloaded once) |
 
 ## Related Resources
 
 | Resource | Description |
 |----------|-------------|
 | [poster-sentry (HuggingFace)](https://huggingface.co/fairdataihub/poster-sentry) | Model weights and config |
-| [poster-sentry-training-data (HuggingFace)](https://huggingface.co/datasets/fairdataihub/poster-sentry-training-data) | Training dataset (3,606 samples) |
+| [poster-sentry-training-data (HuggingFace)](https://huggingface.co/datasets/fairdataihub/poster-sentry-training-data) | Training dataset (3,298 samples) |
 | [poster-sentry-training (GitHub)](https://github.com/fairdataihub/poster-sentry-training) | Training code and replication |
 | [poster2json](https://github.com/fairdataihub/poster2json) | Poster to structured JSON extraction |
 | [posters.science](https://posters.science) | Platform |
