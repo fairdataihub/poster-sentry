@@ -24,7 +24,7 @@ PosterSentry classifies PDFs using three complementary feature channels summariz
 
 | Channel | Features | Dimensions | Signal |
 |---------|----------|------------|--------|
-| **Text** | model2vec (potion-base-32M) embedding | 512 | Semantic content |
+| **Text** | model2vec (potion-base-32M) embedding of first-page text read with the poster2json layout engine | 512 | Semantic content |
 | **Visual** | Color stats, edge density, FFT spatial complexity, whitespace | 15 | Visual layout |
 | **Structural** | Page count, area, font diversity, text blocks, density | 15 | PDF geometry |
 
@@ -34,29 +34,29 @@ Both stages live in one numpy `.npz` head (**20 KB**). Inference is pure numpy â
 
 ## Performance
 
-Validated on the human-validated, license-cleared corpus (3,298 documents, zero synthetic data):
+Validated on the human-validated corpus (3,235 documents, each released under CC0, CC-BY, or an equivalent permissive license; zero synthetic data):
 
 | Metric | Value |
 |--------|-------|
-| **Held-out accuracy** | **93.1%** (95% CI 90.6 to 95.0) |
-| Nested out-of-fold accuracy | 93.9% |
-| F1 (poster) | 93.3% |
-| F1 (non-poster) | 93.0% |
-| Precision / Recall (poster) | 91.8% / 94.8% |
+| **Held-out accuracy** | **94.4%** (95% CI 92.0 to 96.2) |
+| Nested out-of-fold accuracy | 94.4% |
+| F1 (poster) | 94.3% |
+| F1 (non-poster) | 94.5% |
+| Precision / Recall (poster) | 95.3% / 93.4% |
 | Inference speed | < 1 sec/PDF (CPU) |
 
-Applied to 30,139 readable PDFs from Zenodo and Figshare, PosterSentry classified **80.5% as posters** and 19.5% as non-posters: roughly one in five records labeled as posters is something else.
+Applied to 30,139 readable PDFs from Zenodo and Figshare, PosterSentry classified **80.4% as posters** and 19.6% as non-posters: roughly one in five records labeled as posters is something else.
 
 ### Top Discriminative Features
 
 | Feature | Coefficient | Signal |
 |---------|-------------|--------|
-| `page_count` | -3.26 | More pages pushes away from poster |
-| `size_per_page_kb` | +2.42 | Dense, high-resolution single pages |
-| `line_count` | +1.94 | Posters pack many short text lines |
-| `file_size_kb` | -1.70 | Multi-page documents are bigger overall |
-| `mean_g` | +1.10 | Colorful, non-white pages |
-| `is_landscape` | +1.00 | Many posters are landscape |
+| `page_count` | -3.47 | More pages pushes away from poster |
+| `size_per_page_kb` | +2.61 | Dense, high-resolution single pages |
+| `line_count` | +1.88 | Posters pack many short text lines |
+| `file_size_kb` | -1.76 | Multi-page documents are bigger overall |
+| `mean_g` | +1.21 | Colorful, non-white pages |
+| `is_landscape` | +1.06 | Many posters are landscape |
 
 ## Quick Start
 
@@ -124,7 +124,7 @@ PosterSentry          -->  poster2json                     -->  FAIR output
 | Resource | Description |
 |----------|-------------|
 | [poster-sentry (HuggingFace)](https://huggingface.co/fairdataihub/poster-sentry) | Model weights and config |
-| [poster-sentry-training-data (HuggingFace)](https://huggingface.co/datasets/fairdataihub/poster-sentry-training-data) | Training dataset (3,298 samples) |
+| [poster-sentry-training-data (HuggingFace)](https://huggingface.co/datasets/fairdataihub/poster-sentry-training-data) | Training dataset (3,235 samples, with text and feature values) |
 | [poster-sentry-training (GitHub)](https://github.com/fairdataihub/poster-sentry-training) | Training code and replication |
 | [poster2json](https://github.com/fairdataihub/poster2json) | Poster to structured JSON extraction |
 | [posters.science](https://posters.science) | Platform |

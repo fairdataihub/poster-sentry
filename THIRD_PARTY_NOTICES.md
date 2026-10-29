@@ -13,6 +13,15 @@ that are compatible with the MIT License and impose no copyleft obligations.
 | pdfplumber | MIT | PDF text and structure extraction |
 | pypdfium2 | Apache-2.0 OR BSD-3-Clause | PDF page rendering |
 
+## Vendored code: poster2json
+
+`poster_sentry/p2j/` is a copy of the pdfplumber text path of
+[poster2json](https://github.com/fairdataihub/poster2json) 0.10.5 (commit dcb856f),
+including its layout engine (`layout_streams.py`, `layout_blocks.py`, `xy_cut.py`).
+poster2json is released under the MIT License by the FAIR Data Innovations Hub.
+It is vendored rather than installed because the poster2json package also depends
+on torch, transformers, and PyMuPDF, which PosterSentry does not need.
+
 ## pypdfium2 and PDFium
 
 `pypdfium2` provides bindings to the PDFium rendering engine and is licensed

@@ -9,9 +9,10 @@ PDF access supports selectable backends:
 
     "pdfplumber" (default)
         pdfplumber for text and structure (MIT) and pypdfium2 for page
-        rendering (BSD). This permissively licensed stack was used to train
-        and evaluate the released model, so it is the default and the one the
-        paper reports.
+        rendering (BSD). First-page text is read with the poster2json layout
+        engine (MIT, vendored in ``poster_sentry.p2j``) on top of pdfplumber.
+        This permissively licensed stack was used to train and evaluate the
+        released model, so it is the default and the one the paper reports.
 
     "pymupdf"
         PyMuPDF (fitz) for text, structure, and rendering. Faster, but PyMuPDF
@@ -37,7 +38,14 @@ BACKENDS = ("pdfplumber", "pymupdf")
 
 
 def extract_first_page_text(pdf_path: str, backend: str = None, max_chars: int = 4000) -> str:
-    """Extract and clean first-page text with the selected backend."""
+    """Extract and clean first-page text with the selected backend.
+
+    The pdfplumber backend reads the first page with the poster2json layout
+    engine (vendored in ``poster_sentry.p2j``), which rebuilds reading order
+    from the PDF content stream; when that returns no text, pdfplumber's own
+    ``extract_text`` is used. This is the extraction the released model was
+    trained on.
+    """
     import re
     backend = backend or DEFAULT_BACKEND
     try:
@@ -47,9 +55,16 @@ def extract_first_page_text(pdf_path: str, backend: str = None, max_chars: int =
             text = doc[0].get_text() if len(doc) else ""
             doc.close()
         else:
-            import pdfplumber
-            with pdfplumber.open(pdf_path) as doc:
-                text = (doc.pages[0].extract_text() or "") if doc.pages else ""
+            from .p2j import extract_text_with_pdfplumber
+            try:
+                text = extract_text_with_pdfplumber(pdf_path, max_pages=1) or ""
+            except Exception as e:
+                logger.debug(f"poster2json text path failed: {e}")
+                text = ""
+            if not text.strip():
+                import pdfplumber
+                with pdfplumber.open(pdf_path) as doc:
+                    text = (doc.pages[0].extract_text() or "") if doc.pages else ""
         return re.sub(r"\s+", " ", text).strip()[:max_chars]
     except Exception:
         return ""
